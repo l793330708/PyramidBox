@@ -32,7 +32,7 @@ parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float, help='i
 parser.add_argument('--visdom', default=False, type=str2bool, help='Use visdom to for loss visualization')
 parser.add_argument('--send_images_to_visdom', type=str2bool, default=False, help='Sample a random image from each 10th batch, send it to visdom after augmentations step')
 parser.add_argument('--save_folder', default='weights/', help='Location to save checkpoint models')
-parser.add_argument('--annoPath', default="/home/guoqiushan/share/face_box/wider.list", help='Location of wider face')
+parser.add_argument('--annoPath', default="/home/dataset/wider_face/wider_face_split/anno_txt.txt", help='Location of wider face label')
 args = parser.parse_args()
 
 if args.cuda and torch.cuda.is_available():

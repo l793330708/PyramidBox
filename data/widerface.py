@@ -16,8 +16,6 @@ import cv2
 import numpy as np
 import pickle
 
-
-
 class AnnotationTransform(object):
     """Transforms a widerface annotation into a Tensor of bbox coords and label index
     Initilized with a dictionary lookup of classnames to indexes
@@ -60,7 +58,7 @@ class AnnotationTransform(object):
                 ymin = ymax
                 ymax = tmp
 
-            res.append([xmin/float(width),ymin/float(height),xmax/float(width),ymax/float(height),0])
+            res.append([xmin/float(width), ymin/float(height), xmax/float(width), ymax/float(height),0])
         return res  # [[xmin, ymin, xmax, ymax, label_ind], ... ]
 
 
@@ -90,8 +88,8 @@ class Detection(data.Dataset):
         self.ids = list()
         self.annotation = list()
         self.counter = 0
-        for line in open(self.anno_file,'r'):
-            filename = line.strip().split()[0]
+        for line in open(self.anno_file, 'r'):
+            filename = os.path.join("/home/dataset/wider_face/WIDER_train/images", line.strip().split()[0])
             self.ids.append(filename)
             self.annotation.append(line.strip().split()[1:])
 
