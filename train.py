@@ -10,14 +10,14 @@ import torch.utils.data as data
 from data import face, AnnotationTransform, Detection, detection_collate
 from utils.augmentations import PyramidAugmentation
 from layers.modules import MultiBoxLoss
-
+from
 from pyramid import build_sfd,SFD,SSHContext,ContextTexture
 import numpy as np
 import time
 from layers import *
 
-
-os.environ["CUDA_VISIBLE_DEVICES"]="2,3"
+#
+# os.environ["CUDA_VISIBLE_DEVICES"]="2,3"
 
 def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1")
@@ -33,6 +33,10 @@ parser.add_argument('--visdom', default=False, type=str2bool, help='Use visdom t
 parser.add_argument('--send_images_to_visdom', type=str2bool, default=False, help='Sample a random image from each 10th batch, send it to visdom after augmentations step')
 parser.add_argument('--save_folder', default='weights/', help='Location to save checkpoint models')
 parser.add_argument('--annoPath', default="/home/dataset/wider_face/wider_face_split/anno_txt.txt", help='Location of wider face label')
+parser.add_argument('--backend', default="nccl", type=str, help="nccl for GPU, hccl for NPU")
+parser.add_argument('--world_size', default="1", type=int, help="device num for training,pls set 8 for 8p")
+parser.add_argument('--rank', default="1", type=int, help="number of processes")
+parser.add_argument('--device_ids', default="1", type=int, help="number of processes")
 args = parser.parse_args()
 
 if args.cuda and torch.cuda.is_available():
@@ -66,9 +70,7 @@ if args.visdom:
 ssd_net = build_sfd('train', 640, num_classes)
 net = ssd_net
 
-if args.cuda:
-    net = torch.nn.DataParallel(ssd_net)
-    cudnn.benchmark = True
+
 
 
 if args.cuda:
@@ -109,8 +111,19 @@ else:
     
 optimizer = optim.SGD(net.parameters(), lr=args.lr,
                       momentum=momentum, weight_decay=weight_decay)
+
+optimizer = optim.SGD(net.parameters(), lr=args.lr,
+                      momentum=momentum, weight_decay=weight_decay)
 criterion = MultiBoxLoss(num_classes, 0.35, True, 0, True, 3, 0.35, False, False, args.cuda)
 criterion1 = MultiBoxLoss(num_classes, 0.35, True, 0, True, 3, 0.35, False, True, args.cuda)
+dataset = Detection(args.annoPath, PyramidAugmentation(ssd_dim, means), AnnotationTransform())
+if args.cuda:
+    torch.distributed.init_process_group(backend=args.dist_backend, init_method="env://", world_size=args.world_size, rank=rank)
+    net = torch.nn.parallel.DistributedDataParallel(ssd_net, device_ids=[device_id])
+    # boost computing rate but some randomness vice versa cudnn.deterministic=True
+    cudnn.benchmark = True
+    train_sampler = torch.utils.data.distributed.DistributedSampler(dataset)
+
 
 def train():
     net.train()
@@ -119,9 +132,6 @@ def train():
     conf_loss = 0
     epoch = 0
     print('Loading Dataset...')
-
-    dataset = Detection(args.annoPath, PyramidAugmentation(ssd_dim, means), AnnotationTransform())
-
     epoch_size = len(dataset) // args.batch_size
     print('Training SSD on', dataset.name)
     step_index = 0
@@ -150,6 +160,15 @@ def train():
     batch_iterator = None
     data_loader = data.DataLoader(dataset, batch_size, num_workers=args.num_workers,
                                   shuffle=True, collate_fn=detection_collate, pin_memory=True)
+    # data_loader = torch.utils.data.DataLoader(
+    #     dataset = dataset,
+    #     batch_size = batch_size,
+    #     shuffle = (train_sampler is None),
+    #     num_workers = args.num_workers,
+    #     pin_memory=False,
+    #     sample = train_sampler if training else None,
+    #     drop_last=True
+    # )
     for iteration in range(args.start_iter, max_iter):
         t0 = time.time()
         if (not batch_iterator) or (iteration % epoch_size == 0):
@@ -176,10 +195,10 @@ def train():
 
         if args.cuda:
             images = Variable(images.cuda())
-            targets = [Variable(anno.cuda(), volatile=True) for anno in targets]
+            targets = [Variable(anno.cuda()) for anno in targets]
         else:
             images = Variable(images)
-            targets = [Variable(anno, volatile=True) for anno in targets]
+            targets = [Variable(anno) for anno in targets]
         # forward
         t1 = time.time()
         out = net(images)

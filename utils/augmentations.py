@@ -253,15 +253,16 @@ class RandomBaiduCrop(object):
         rand_idx = random.randint(len(boxArea))
         rand_Side = boxArea[rand_idx] ** 0.5
         #rand_Side = min(boxes[rand_idx,2] - boxes[rand_idx,0] + 1, boxes[rand_idx,3] - boxes[rand_idx,1] + 1)
-        
+        #anchor_size
         anchors = [16,32,64,128,256,512]
         distance = self.infDistance
         anchor_idx = 5
         for i,anchor in enumerate(anchors):
+            #choose the index of the nearest anchor scale from the selected face
             if abs(anchor-rand_Side) < distance:
                 distance = abs(anchor-rand_Side)
                 anchor_idx = i
-
+        #choose a random index i_target {0,1,...,min(5, i_anchor + 1)
         target_anchor = random.choice(anchors[0:min(anchor_idx+1,5)+1])
         ratio = float(target_anchor) / rand_Side
         ratio = ratio * (2**random.uniform(-1,1))

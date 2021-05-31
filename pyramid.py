@@ -54,7 +54,7 @@ class ContextTexture (nn.Module):
         up = self.up_conv(up)
         main = self.main_conv(main)
         _,_,H,W = main.size()
-        res = F.upsample(up,scale_factor=2,mode='bilinear') 
+        res = F.interpolate(up, scale_factor=2, mode='bilinear')
         if res.size(2) != main.size(2) or res.size(3) != main.size(3):
             res = res[:,:,0:H,0:W]
         res = res + main
@@ -251,8 +251,8 @@ class SFD(nn.Module):
                 prior_head_boxes.append(self.priorbox_head.forward(idx-1,f_layer.shape[3],f_layer.shape[2]))
             #if idx > 1:
             #    prior_body_boxes.append(self.priorbox_body.forward(idx-2,f_layer.shape[3],f_layer.shape[2]))
-        self.priors = Variable(torch.cat([p for p in prior_boxs],0),volatile=True)
-        self.priors_head = Variable(torch.cat([p for p in prior_head_boxes],0),volatile=True)
+        self.priors = Variable(torch.cat([p for p in prior_boxs],0))
+        self.priors_head = Variable(torch.cat([p for p in prior_head_boxes],0))
         #self.priors_body = Variable(torch.cat([p for p in prior_body_boxes],0),volatile=True)
 
 
