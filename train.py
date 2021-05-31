@@ -10,7 +10,7 @@ import torch.utils.data as data
 from data import face, AnnotationTransform, Detection, detection_collate
 from utils.augmentations import PyramidAugmentation
 from layers.modules import MultiBoxLoss
-from
+from apex import amp
 from pyramid import build_sfd,SFD,SSHContext,ContextTexture
 import numpy as np
 import time
@@ -33,10 +33,11 @@ parser.add_argument('--visdom', default=False, type=str2bool, help='Use visdom t
 parser.add_argument('--send_images_to_visdom', type=str2bool, default=False, help='Sample a random image from each 10th batch, send it to visdom after augmentations step')
 parser.add_argument('--save_folder', default='weights/', help='Location to save checkpoint models')
 parser.add_argument('--annoPath', default="/home/dataset/wider_face/wider_face_split/anno_txt.txt", help='Location of wider face label')
-parser.add_argument('--backend', default="nccl", type=str, help="nccl for GPU, hccl for NPU")
+parser.add_argument('--dist_backend', default="nccl", type=str, help="nccl for GPU, hccl for NPU")
 parser.add_argument('--world_size', default="1", type=int, help="device num for training,pls set 8 for 8p")
 parser.add_argument('--rank', default="1", type=int, help="number of processes")
 parser.add_argument('--device_ids', default="1", type=int, help="number of processes")
+parser.add_argument('--useMultiProcess', default=False, type=bool, help="use multiProcessUnit")
 args = parser.parse_args()
 
 if args.cuda and torch.cuda.is_available():
@@ -111,15 +112,14 @@ else:
     
 optimizer = optim.SGD(net.parameters(), lr=args.lr,
                       momentum=momentum, weight_decay=weight_decay)
+ssd_net, optimizer = amp.initialize(ssd_net, optimizer, opt_level="02")
 
-optimizer = optim.SGD(net.parameters(), lr=args.lr,
-                      momentum=momentum, weight_decay=weight_decay)
 criterion = MultiBoxLoss(num_classes, 0.35, True, 0, True, 3, 0.35, False, False, args.cuda)
 criterion1 = MultiBoxLoss(num_classes, 0.35, True, 0, True, 3, 0.35, False, True, args.cuda)
 dataset = Detection(args.annoPath, PyramidAugmentation(ssd_dim, means), AnnotationTransform())
-if args.cuda:
-    torch.distributed.init_process_group(backend=args.dist_backend, init_method="env://", world_size=args.world_size, rank=rank)
-    net = torch.nn.parallel.DistributedDataParallel(ssd_net, device_ids=[device_id])
+if args.useMultiProcess:
+    torch.distributed.init_process_group(backend=args.dist_backend, init_method="env://", world_size=args.world_size, rank=args.device_ids)
+    net = torch.nn.parallel.DistributedDataParallel(ssd_net, device_ids=tuple(np.arange(0,args.device_ids)))
     # boost computing rate but some randomness vice versa cudnn.deterministic=True
     cudnn.benchmark = True
     train_sampler = torch.utils.data.distributed.DistributedSampler(dataset)
@@ -208,7 +208,9 @@ def train():
         loss_l_head, loss_c_head = criterion(tuple(out[3:6]), targets)
         
         loss = loss_l + loss_c + 0.5 * loss_l_head + 0.5 * loss_c_head
-        loss.backward()
+        # loss.backward()
+        with amp.scale_loss(loss, optimizer) as scaled_loss:
+            scaled_loss.backward()
         optimizer.step()
         t2 = time.time()
         loc_loss += loss_l.item()
